@@ -19,7 +19,6 @@
         }
     </script>
     <style>
-        /* Background pink aesthetic dengan gradasi lembut */
         .bg-gradient-main {
             background: linear-gradient(135deg, #fbc2eb 0%, #fdc5e6 25%, #f8a5c2 50%, #ffc3e0 100%);
             background-attachment: fixed;
@@ -56,7 +55,6 @@
     </script>
 </head>
 <body class="bg-gradient-main font-sans text-gray-800 min-h-screen flex flex-col">
-    <!-- Floating decorative elements -->
     <div class="fixed inset-0 overflow-hidden pointer-events-none z-0">
         <div class="absolute top-20 left-10 w-72 h-72 bg-pink-200 rounded-full mix-blend-multiply filter blur-3xl opacity-40 animate-float"></div>
         <div class="absolute bottom-20 right-10 w-80 h-80 bg-rose-200 rounded-full mix-blend-multiply filter blur-3xl opacity-40 animate-float" style="animation-delay: -2s;"></div>
@@ -155,6 +153,9 @@
         let currentUser = null;
         let modalCallback = null;
 
+        // Tarif denda per hari (Rp)
+        const DAILY_FINE = 1000;
+
         function showToast(msg, type = "success") {
             const toast = document.createElement("div");
             toast.className = `fixed bottom-5 right-5 z-50 px-5 py-3 rounded-xl shadow-lg text-white font-medium flex items-center gap-2 ${type === 'error' ? 'bg-red-500' : 'bg-pink-500'}`;
@@ -166,6 +167,16 @@
         function formatDate(dateObj) { if (!dateObj) return '-'; return new Date(dateObj).toLocaleDateString('id-ID'); }
         function getDueDate(loanDate) { const due = new Date(loanDate); due.setDate(due.getDate() + 7); return due.toISOString(); }
         function isOverdue(dueDate) { return new Date() > new Date(dueDate); }
+
+        // Hitung denda: jumlah hari keterlambatan * DAILY_FINE
+        function calculateLateFee(dueDateStr, returnDateStr) {
+            const due = new Date(dueDateStr);
+            const ret = new Date(returnDateStr);
+            if (ret <= due) return 0;
+            const diffTime = ret - due;
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            return diffDays * DAILY_FINE;
+        }
 
         async function seedInitialData() {
             const adminQuery = query(usersCol, where("username", "==", "admin"));
@@ -229,7 +240,7 @@
                     const loanData = loan.data();
                     const book = await getDoc(doc(booksCol, loanData.bookId));
                     const member = await getDoc(doc(membersCol, loanData.memberId));
-                    rets.push({ id: ds.id, ...ret, bookTitle: book.exists() ? book.data().title : "-", memberName: member.exists() ? member.data().name : "-", loanDate: loanData.loanDate });
+                    rets.push({ id: ds.id, ...ret, bookTitle: book.exists() ? book.data().title : "-", memberName: member.exists() ? member.data().name : "-", loanDate: loanData.loanDate, dueDate: loanData.dueDate });
                 }
             }
             return rets;
@@ -294,6 +305,7 @@
             else if (section === "adminReturns") await renderAdminReturns(container);
         }
 
+        // Buku (tidak berubah)
         async function renderAdminBooks(container) {
             let books = await loadBooks();
             container.innerHTML = `
@@ -428,6 +440,7 @@
             };
         }
 
+        // Peminjaman (Admin) - dengan perpanjangan manual
         async function renderAdminLoans(container) {
             let loans = await loadLoans();
             const books = await loadBooks();
@@ -497,20 +510,38 @@
                 const loanRef = doc(loansCol, loanId);
                 const loan = await getDoc(loanRef);
                 if (!loan.exists() || loan.data().status === 'returned') return;
-                await addDoc(returnsCol, { loanId, returnDate: new Date().toISOString(), lateFee: 0 });
-                await updateDoc(loanRef, { status: "returned", returnDate: new Date().toISOString() });
-                const bookRef = doc(booksCol, loan.data().bookId);
+                const loanData = loan.data();
+                const returnDate = new Date().toISOString();
+                // Hitung denda
+                const lateFee = calculateLateFee(loanData.dueDate, returnDate);
+                // Simpan ke returns
+                await addDoc(returnsCol, { loanId, returnDate, lateFee });
+                // Update loan status
+                await updateDoc(loanRef, { status: "returned", returnDate });
+                // Kembalikan stok buku
+                const bookRef = doc(booksCol, loanData.bookId);
                 const bookSnap = await getDoc(bookRef);
                 if (bookSnap.exists()) await updateDoc(bookRef, { availableStock: bookSnap.data().availableStock + 1 });
-                showToast("Pengembalian berhasil dicatat");
+                if (lateFee > 0) {
+                    showToast(`Pengembalian dicatat. Denda: Rp${lateFee.toLocaleString()}`);
+                } else {
+                    showToast("Pengembalian berhasil dicatat (tepat waktu)");
+                }
                 loans = await loadLoans();
                 renderTable();
             };
         }
 
+        // Data Pengembalian (Admin) - menampilkan denda
         async function renderAdminReturns(container) {
             let returns = await loadReturns();
-            container.innerHTML = `<h2 class="text-2xl font-bold mb-3 text-pink-700"><i class="fas fa-undo-alt text-pink-500"></i> Data Pengembalian</h2><div class="overflow-x-auto"><table class="w-full table-modern bg-white/70 rounded-xl"><thead class="bg-pink-50"><tr><th>Peminjam</th><th>Buku</th><th>Tgl Pinjam</th><th>Tgl Kembali</th><th>Denda</th></tr></thead><tbody>${returns.map(r => `<tr><td class="font-medium">${r.memberName}</td><td class="font-medium">${r.bookTitle}</td><td class="font-medium">${formatDate(r.loanDate)}</td><td class="font-medium">${formatDate(r.returnDate)}</td><td class="font-medium">Rp0</td></tr>`).join('')}</tbody></table></div>`;
+            container.innerHTML = `<h2 class="text-2xl font-bold mb-3 text-pink-700"><i class="fas fa-undo-alt text-pink-500"></i> Data Pengembalian</h2><div class="overflow-x-auto"><table class="w-full table-modern bg-white/70 rounded-xl"><thead class="bg-pink-50"><tr><th>Peminjam</th><th>Buku</th><th>Tgl Pinjam</th><th>Jatuh Tempo</th><th>Tgl Kembali</th><th>Denda</th></tr></thead><tbody>${returns.map(r => {
+                const dueDateFormatted = formatDate(r.dueDate);
+                const loanDateFormatted = formatDate(r.loanDate);
+                const returnDateFormatted = formatDate(r.returnDate);
+                const fineFormatted = `Rp${(r.lateFee || 0).toLocaleString()}`;
+                return `<tr><td class="font-medium">${r.memberName}</td><td class="font-medium">${r.bookTitle}</td><td class="font-medium">${loanDateFormatted}</td><td class="font-medium">${dueDateFormatted}</td><td class="font-medium">${returnDateFormatted}</td><td class="font-medium ${r.lateFee > 0 ? 'text-red-600 font-semibold' : 'text-green-600'}">${fineFormatted}</td></tr>`;
+            }).join('')}</tbody></table></div>`;
         }
 
         // ==================== USER ====================
@@ -558,7 +589,7 @@
             if (!currentUser.memberId) return;
             let all = await loadLoans();
             const myLoans = all.filter(l => l.memberId === currentUser.memberId);
-            container.innerHTML = `<h2 class="text-2xl font-bold mb-3 text-pink-700">Peminjaman Saya</h2><div class="overflow-x-auto"><table class="w-full table-modern bg-white/70 rounded-xl"><thead class="bg-pink-50"><tr><th>Cover</th><th>Buku</th><th>Tgl Pinjam</th><th>Jatuh Tempo</th><th>Status</th></tr></thead><tbody>${myLoans.map(l => { const overdue = l.status === 'borrowed' && isOverdue(l.dueDate); const status = l.status === 'returned' ? 'Dikembalikan' : (overdue ? 'Terlambat' : 'Dipinjam'); return `<tr><td class="text-2xl">${l.bookCover || '📖'}</td><td class="font-medium">${l.bookTitle}</td><td class="font-medium">${formatDate(l.loanDate)}</td><td class="font-medium">${formatDate(l.dueDate)}</td><td class="font-medium">${status}</td></tr>`; }).join('')}</tbody></td></div>`;
+            container.innerHTML = `<h2 class="text-2xl font-bold mb-3 text-pink-700">Peminjaman Saya</h2><div class="overflow-x-auto"><table class="w-full table-modern bg-white/70 rounded-xl"><thead class="bg-pink-50"><tr><th>Cover</th><th>Buku</th><th>Tgl Pinjam</th><th>Jatuh Tempo</th><th>Status</th></tr></thead><tbody>${myLoans.map(l => { const overdue = l.status === 'borrowed' && isOverdue(l.dueDate); const status = l.status === 'returned' ? 'Dikembalikan' : (overdue ? 'Terlambat' : 'Dipinjam'); return `<td><td class="text-2xl">${l.bookCover || '📖'}</td><td class="font-medium">${l.bookTitle}</td><td class="font-medium">${formatDate(l.loanDate)}</td><td class="font-medium">${formatDate(l.dueDate)}</td><td class="font-medium">${status}</td></tr>`; }).join('')}</tbody></table></div>`;
         }
 
         async function renderUserReturn(container) {
@@ -571,12 +602,19 @@
                 const loanRef = doc(loansCol, loanId);
                 const loan = await getDoc(loanRef);
                 if (loan.data().status === 'returned') return;
-                await addDoc(returnsCol, { loanId, returnDate: new Date().toISOString(), lateFee: 0 });
-                await updateDoc(loanRef, { status: "returned", returnDate: new Date().toISOString() });
-                const bookRef = doc(booksCol, loan.data().bookId);
+                const loanData = loan.data();
+                const returnDate = new Date().toISOString();
+                const lateFee = calculateLateFee(loanData.dueDate, returnDate);
+                await addDoc(returnsCol, { loanId, returnDate, lateFee });
+                await updateDoc(loanRef, { status: "returned", returnDate });
+                const bookRef = doc(booksCol, loanData.bookId);
                 const book = await getDoc(bookRef);
                 if (book.exists()) await updateDoc(bookRef, { availableStock: book.data().availableStock + 1 });
-                showToast("Buku berhasil dikembalikan");
+                if (lateFee > 0) {
+                    showToast(`Buku dikembalikan. Denda: Rp${lateFee.toLocaleString()}`);
+                } else {
+                    showToast("Buku berhasil dikembalikan (tepat waktu)");
+                }
                 renderUserReturn(container);
             });
         }
