@@ -41,9 +41,7 @@
         }
         .table-modern td, .table-modern th { padding: 12px 16px; border-bottom: 1px solid #ffe2f0; }
         .modal-bg { background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); }
-        /* Tabel hover lebih lembut */
         .table-modern tbody tr:hover { background: #fff0f5; }
-        /* Scrollbar */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: #ffe0f0; border-radius: 10px; }
         ::-webkit-scrollbar-thumb { background: #e91e63; border-radius: 10px; }
@@ -57,15 +55,15 @@
         }
     </script>
 </head>
-<body class="bg-gradient-main font-sans text-gray-800 min-h-screen">
-    <!-- Floating decorative elements dengan warna pink pastel -->
+<body class="bg-gradient-main font-sans text-gray-800 min-h-screen flex flex-col">
+    <!-- Floating decorative elements -->
     <div class="fixed inset-0 overflow-hidden pointer-events-none z-0">
         <div class="absolute top-20 left-10 w-72 h-72 bg-pink-200 rounded-full mix-blend-multiply filter blur-3xl opacity-40 animate-float"></div>
         <div class="absolute bottom-20 right-10 w-80 h-80 bg-rose-200 rounded-full mix-blend-multiply filter blur-3xl opacity-40 animate-float" style="animation-delay: -2s;"></div>
         <div class="absolute top-1/2 left-1/3 w-60 h-60 bg-fuchsia-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-float" style="animation-delay: -4s;"></div>
     </div>
 
-    <div id="app" class="relative z-10 container mx-auto px-4 py-6 max-w-7xl">
+    <div id="app" class="relative z-10 container mx-auto px-4 py-6 max-w-7xl flex-grow">
         <!-- Login Section -->
         <div id="authSection" class="flex justify-center items-center min-h-[80vh]">
             <div class="glass-card w-full max-w-md p-8">
@@ -112,7 +110,14 @@
         </div>
     </div>
 
-    <!-- Modal Global untuk Form (Tambah/Edit) -->
+    <!-- Footer -->
+    <footer class="relative z-10 text-center py-4 text-pink-700 text-sm border-t border-pink-200 bg-white/30 backdrop-blur-sm mt-4">
+        <div class="container mx-auto px-4">
+            <i class="fas fa-book-open mr-1"></i> Perpustakaan Digital SMK Insan Cemerlang © 2025 | Dibangun dengan <i class="fas fa-heart text-red-400"></i> untuk UKK RPL
+        </div>
+    </footer>
+
+    <!-- Modal Global -->
     <div id="modalForm" class="fixed inset-0 flex items-center justify-center z-50 hidden modal-bg transition-all">
         <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl transform transition-all">
             <div class="flex justify-between items-center mb-4"><h3 id="modalTitle" class="text-xl font-bold text-pink-700"></h3><button id="closeModalBtn" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button></div>
@@ -180,9 +185,10 @@
         seedInitialData().catch(console.error);
 
         async function handleLogin(username, password) {
+            if (!username || !password) { showToast("Username dan password harus diisi", "error"); return false; }
             const q = query(usersCol, where("username", "==", username), where("password", "==", password));
             const snap = await getDocs(q);
-            if (snap.empty) { showToast("Login gagal", "error"); return false; }
+            if (snap.empty) { showToast("Login gagal: username atau password salah", "error"); return false; }
             currentUser = { id: snap.docs[0].id, ...snap.docs[0].data() };
             localStorage.setItem("perpustakaan_user", JSON.stringify({ id: currentUser.id, username: currentUser.username, role: currentUser.role, memberId: currentUser.memberId }));
             showToast(`Selamat datang ${currentUser.username}`);
@@ -191,6 +197,7 @@
         }
 
         async function handleRegister(name, className, phone, username, password) {
+            if (!name || !className || !username || !password) { showToast("Semua field harus diisi", "error"); return false; }
             const existing = await getDocs(query(usersCol, where("username", "==", username)));
             if (!existing.empty) { showToast("Username sudah dipakai", "error"); return false; }
             const memberRef = await addDoc(membersCol, { name, className, phone, registerDate: new Date().toISOString(), address: "-" });
@@ -320,7 +327,7 @@
                     const totalStock = parseInt(document.getElementById("bookStock").value);
                     if (!title || isNaN(totalStock)) { showToast("Data tidak lengkap", "error"); return; }
                     await addDoc(booksCol, { title, publisher, totalStock, availableStock: totalStock, cover, isbn: "-", location: "-" });
-                    showToast("Buku ditambahkan");
+                    showToast("Buku berhasil ditambahkan");
                     books = await loadBooks();
                     renderTable();
                 });
@@ -338,16 +345,23 @@
                     const newTitle = document.getElementById("bookTitle").value;
                     const newPub = document.getElementById("bookPublisher").value;
                     const newTotal = parseInt(document.getElementById("bookStock").value);
-                    if (!newTitle || isNaN(newTotal)) return;
+                    if (!newTitle || isNaN(newTotal)) { showToast("Data tidak valid", "error"); return; }
                     const diff = newTotal - data.totalStock;
                     const newAvailable = data.availableStock + diff;
                     await updateDoc(ref, { cover: newCover, title: newTitle, publisher: newPub, totalStock: newTotal, availableStock: newAvailable });
-                    showToast("Buku diupdate");
+                    showToast("Buku berhasil diperbarui");
                     books = await loadBooks();
                     renderTable();
                 });
             };
-            window.deleteBook = async (id) => { if (confirm("Hapus buku?")) { await deleteDoc(doc(booksCol, id)); showToast("Buku dihapus"); books = await loadBooks(); renderTable(); } };
+            window.deleteBook = async (id) => { 
+                if (confirm("Yakin ingin menghapus buku ini?")) { 
+                    await deleteDoc(doc(booksCol, id)); 
+                    showToast("Buku berhasil dihapus"); 
+                    books = await loadBooks(); 
+                    renderTable(); 
+                } 
+            };
         }
 
         async function renderAdminMembers(container) {
@@ -399,12 +413,19 @@
                     const newClass = document.getElementById("memberClass").value;
                     const newPhone = document.getElementById("memberPhone").value;
                     if (newName) await updateDoc(ref, { name: newName, className: newClass, phone: newPhone });
-                    showToast("Anggota diperbarui");
+                    showToast("Anggota berhasil diperbarui");
                     members = await loadMembers();
                     renderTable();
                 });
             };
-            window.deleteMember = async (id) => { if (confirm("Hapus anggota?")) { await deleteDoc(doc(membersCol, id)); showToast("Anggota dihapus"); members = await loadMembers(); renderTable(); } };
+            window.deleteMember = async (id) => { 
+                if (confirm("Hapus anggota?")) { 
+                    await deleteDoc(doc(membersCol, id)); 
+                    showToast("Anggota dihapus"); 
+                    members = await loadMembers(); 
+                    renderTable(); 
+                } 
+            };
         }
 
         async function renderAdminLoans(container) {
@@ -481,7 +502,7 @@
                 const bookRef = doc(booksCol, loan.data().bookId);
                 const bookSnap = await getDoc(bookRef);
                 if (bookSnap.exists()) await updateDoc(bookRef, { availableStock: bookSnap.data().availableStock + 1 });
-                showToast("Pengembalian dicatat");
+                showToast("Pengembalian berhasil dicatat");
                 loans = await loadLoans();
                 renderTable();
             };
@@ -537,7 +558,7 @@
             if (!currentUser.memberId) return;
             let all = await loadLoans();
             const myLoans = all.filter(l => l.memberId === currentUser.memberId);
-            container.innerHTML = `<h2 class="text-2xl font-bold mb-3 text-pink-700">Peminjaman Saya</h2><div class="overflow-x-auto"><table class="w-full table-modern bg-white/70 rounded-xl"><thead class="bg-pink-50"><tr><th>Cover</th><th>Buku</th><th>Tgl Pinjam</th><th>Jatuh Tempo</th><th>Status</th></tr></thead><tbody>${myLoans.map(l => { const overdue = l.status === 'borrowed' && isOverdue(l.dueDate); const status = l.status === 'returned' ? 'Dikembalikan' : (overdue ? 'Terlambat' : 'Dipinjam'); return `<tr><td class="text-2xl">${l.bookCover || '📖'}</td><td class="font-medium">${l.bookTitle}</td><td class="font-medium">${formatDate(l.loanDate)}</td><td class="font-medium">${formatDate(l.dueDate)}</td><td class="font-medium">${status}</td></tr>`; }).join('')}</tbody></table></div>`;
+            container.innerHTML = `<h2 class="text-2xl font-bold mb-3 text-pink-700">Peminjaman Saya</h2><div class="overflow-x-auto"><table class="w-full table-modern bg-white/70 rounded-xl"><thead class="bg-pink-50"><tr><th>Cover</th><th>Buku</th><th>Tgl Pinjam</th><th>Jatuh Tempo</th><th>Status</th></tr></thead><tbody>${myLoans.map(l => { const overdue = l.status === 'borrowed' && isOverdue(l.dueDate); const status = l.status === 'returned' ? 'Dikembalikan' : (overdue ? 'Terlambat' : 'Dipinjam'); return `<tr><td class="text-2xl">${l.bookCover || '📖'}</td><td class="font-medium">${l.bookTitle}</td><td class="font-medium">${formatDate(l.loanDate)}</td><td class="font-medium">${formatDate(l.dueDate)}</td><td class="font-medium">${status}</td></tr>`; }).join('')}</tbody></td></div>`;
         }
 
         async function renderUserReturn(container) {
@@ -555,7 +576,7 @@
                 const bookRef = doc(booksCol, loan.data().bookId);
                 const book = await getDoc(bookRef);
                 if (book.exists()) await updateDoc(bookRef, { availableStock: book.data().availableStock + 1 });
-                showToast("Buku dikembalikan");
+                showToast("Buku berhasil dikembalikan");
                 renderUserReturn(container);
             });
         }
@@ -565,7 +586,7 @@
         document.getElementById("doRegisterBtn").onclick = () => handleRegister(document.getElementById("regName").value, document.getElementById("regClass").value, document.getElementById("regPhone").value, document.getElementById("regUsername").value, document.getElementById("regPassword").value);
         document.getElementById("loginTabBtn").onclick = () => { document.getElementById("loginForm").classList.remove("hidden"); document.getElementById("registerForm").classList.add("hidden"); document.getElementById("loginTabBtn").classList.add("bg-white","text-pink-600"); document.getElementById("registerTabBtn").classList.remove("bg-white","text-pink-600"); };
         document.getElementById("registerTabBtn").onclick = () => { document.getElementById("registerForm").classList.remove("hidden"); document.getElementById("loginForm").classList.add("hidden"); document.getElementById("registerTabBtn").classList.add("bg-white","text-pink-600"); document.getElementById("loginTabBtn").classList.remove("bg-white","text-pink-600"); };
-        document.getElementById("logoutBtn").onclick = () => { localStorage.removeItem("perpustakaan_user"); currentUser = null; document.getElementById("authSection").classList.remove("hidden"); document.getElementById("dashboardSection").classList.add("hidden"); };
+        document.getElementById("logoutBtn").onclick = () => { localStorage.removeItem("perpustakaan_user"); currentUser = null; document.getElementById("authSection").classList.remove("hidden"); document.getElementById("dashboardSection").classList.add("hidden"); showToast("Anda telah logout"); };
         const saved = localStorage.getItem("perpustakaan_user");
         if (saved) { currentUser = JSON.parse(saved); renderDashboard(); } else { document.getElementById("authSection").classList.remove("hidden"); document.getElementById("dashboardSection").classList.add("hidden"); }
     </script>
